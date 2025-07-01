@@ -1,0 +1,110 @@
+resources:
+  repositories:
+    - repository: Shared_Templates
+      type: git
+      name: Data Science/TEC_007_Shared_Templates
+      ref: refs/tags/v2.0  # NOTE: this should be the latest version of the shared templates
+
+trigger:
+  branches:
+    include:
+    - main
+    - development
+
+  paths:
+    include:
+    - "*"
+    exclude:
+    # folders that should not trigger pipeline
+    - "__pycache__"
+    - ".pytest_cache"
+    - ".venv"
+    - ".vscode"
+    - "data"
+    - "docs"
+    - "tests"
+    # files that should not trigger pipeline
+    - ".gitignore"
+    - "*.bicep*"
+    - "*.ipynb"
+    - "*.md"
+    - "*.xls?"
+    - "*pipeline*.y?ml"
+
+variables:  # NOTE: variables are only available after the step they were set in, so a variable cannot be used to define another in the same step that it iself defined.
+  - group: sonarcloud
+  - group: azure
+  
+  # Constants
+  - name: vmImageName
+    value: 'ubuntu-latest'
+  - name: isMain
+    value: $[eq(variables['Build.SourceBranchName'], 'main')]
+  - name: projectId  # NOTE: project ID will be retrieved from deploy.bicep, no need to set here
+    value: ''
+  - name: projectName  # NOTE: project name will be retrieved from deploy.bicep, no need to set here
+    value: ''
+  - name: projectRoot
+    value: $(System.DefaultWorkingDirectory)
+  # - name: sonarProjectKey  # i.e. nkdit_TEC_002_Azure_Example_Project_App_Service
+  #   value: $[variables['sonarcloud-organization']]_$(Build.Repository.Name)
+
+  - name: filesToDelete
+    value: | 
+      .gitignore
+      .funcignore
+      .git
+      .vscode
+      .venv
+      deploy/*.bicep
+      deploy/*.py
+      poetry.lock
+      poetry.toml
+      tests
+      **/__pycache__
+      **/example*.json
+      **/*.ipynb
+      **/*.xls?
+
+# ---------- PIPELINE STARTS HERE ----------
+stages:
+- template: appBuild.yml@Shared_Templates
+
+- template: WebApp_Bicep_Deployment/wabicepDeployment.yml@Shared_Templates
+  parameters:
+    projectId: $[stageDependencies.Build.BuildJob.outputs['setVars.projectId']]
+    projectName: $[stageDependencies.Build.BuildJob.outputs['setVars.projectName']]
+    location: $[stageDependencies.Build.BuildJob.outputs['setVars.location']]
+    pythonVersion: $[stageDependencies.Build.BuildJob.outputs['setVars.pythonVersion']]
+    pathToApp: $[stageDependencies.Build.BuildJob.outputs['setVars.pathToApp']]
+    existingASPname: $[stageDependencies.Build.BuildJob.outputs['setVars.existingASPname']]
+    blobStorage: $[stageDependencies.Build.BuildJob.outputs['setVars.blobStorage']]
+    runFromPackage: $[stageDependencies.Build.BuildJob.outputs['setVars.runFromPackage']]
+    serviceConnectionProd: $(armConnectionProd)
+    ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
+      armConnection: $(armConnectionProd)
+    ${{ else }}:
+      armConnection: $(armConnectionDev)
+
+- template: appDeploy.yml@Shared_Templates
+  parameters:
+    projectId: $[stageDependencies.Build.BuildJob.outputs['setVars.projectId']]
+    projectName: $[stageDependencies.Build.BuildJob.outputs['setVars.projectName']]
+    appType: $[stageDependencies.Build.BuildJob.outputs['setVars.appType']]
+    ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
+      armConnection: $(armConnectionProd)
+      appName: 'wa-$(projectId)-$(projectName)'
+    ${{ else }}:
+      armConnection: $(armConnectionDev)
+      appName: 'wa-$(projectId)-$(projectName)-dev'
+
+- template: authConfigforAppService.yml@Shared_Templates
+  parameters:
+    projectId: $[stageDependencies.Build.BuildJob.outputs['setVars.projectId']]
+    projectName: $[stageDependencies.Build.BuildJob.outputs['setVars.projectName']]
+    ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
+      armConnection: $(armConnectionProd)
+      appName: 'wa-$(projectId)-$(projectName)'
+    ${{ else }}:
+      armConnection: $(armConnectionDev)
+      appName: 'wa-$(projectId)-$(projectName)-dev'

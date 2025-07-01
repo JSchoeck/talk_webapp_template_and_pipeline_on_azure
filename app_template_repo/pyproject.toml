@@ -1,0 +1,101 @@
+[project]
+name = "PAS_000_demo_app"  # Name must have this structure: [type in 3 letters: TEC/PAS/PRO]_[project number in 3 digits]_[name with underscores], e.g. TEC_002_Web_App_Template
+version = "1.0.0"
+description = "This is a demo app for NKD's data science template for automated deploymend as an Azure App Service."
+authors = [
+  {name = "Johannes Schöck", email = "Johannes.Schoeck@nkd.de"},
+  {name = "Luis Cuervo", email = "Luis.Cuervo@nkd.de"},
+  {name = "Sai Nallamothu", email = "SaiRam.Nallamothu@nkd.de"},
+]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.poetry]
+package-mode = false
+
+[tool.nkd]
+template_version = "2.0.0"  # Do not change this, unless you update to a new version of the template.
+# Used to build the link to the MS Teams support channel. Get from the MS Teams channel URL.
+channelid = "xyz"  # channelid from URL
+teamid = "TeamID"  # teamid from URL
+groupid = "def"  # Teams Group ID
+tenantid = "abc"  # NOTE: Azure Tenant ID
+
+# These parameteres are passed to shared templates in the project for Azure resources config
+location= "West Europe"  # only "West Europe" or "Germany West Central" are allowed
+pathToApp= "src/app.py" # path to the main app file
+existingASPname = "asp-web-apps"  # if empty, creates new ASP, otherwise use existing ASP from common resources
+blobStorage = true # needs to be true if files are saved in the web app and run_from_package is 1
+runFromPackage = 1  # 1 for true, 0 for false; running from archived package cannot directly access local file system, but is much, much faster in deployment
+sonarCloudQG = false # true: perform SonarCloud Quality Gate check
+appType = "webApp" # [webApp, functionApp]
+
+[[tool.poetry.source]]
+name = "nkdit-data-science"
+url = "https://nkdit.pkgs.visualstudio.com/_packaging/nkd_utils_lib/pypi/simple/"
+priority = "explicit"
+
+[tool.poetry.dependencies]
+nkd-utils-lib = { version = "^2025.4.1", source = "nkdit-data-science", extras = ["webapp"] }
+azure-core = "^1.32"
+azure-identity = "^1.21"
+cryptography = "<44.0"
+pyyaml = "^6.0"
+xlsxwriter = "^3.2"
+
+[tool.poetry.group.dev.dependencies]
+# installing without these dependencies: poetry install --without dev
+artifacts-keyring = "^0.3"
+ipykernel = "^6.25"
+ipython = "^8.14"
+jupyter_contrib_nbextensions = "^0.7"
+keyring = "^24.2"
+pytest = "^8.0"
+ruff = "^0.11"
+
+[tool.poetry.requires-plugins]
+poetry-plugin-export = ">=1.9"
+
+[build-system]
+requires = ["poetry-core>=2.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pyright]
+pythonVersion = "3.11"
+extraPaths = [".venv/Lib/site-packages"]
+include = ["**/*"]
+exclude = ["**/site-packages/**"]
+typeCheckingMode = "standard"
+
+[tool.ruff]
+# https://docs.astral.sh/ruff/configuration/#using-pyprojecttoml
+target-version = "py311"
+line-length = 120
+show-fixes = true
+
+[tool.ruff.format]
+docstring-code-format = true
+quote-style = "double"
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "D", "Q", "W", "I", "N", "ANN", "COM", "C4", "EM", "PT", "SIM", "RUF", "NPY", "TRY", "PLW", "PLE", "PLC", "PLR", "PD"]
+ignore = ["E501", "D100", "D103", "D206", "D300", "D104", "N803", "N806", "PD901", "RUF005", "E712", "COM812", "COM819", "E111", "E114", "E117", "W191"]
+unfixable = ["F401", "F841"]
+task-tags = ["TODO", "BUG", "NOTE"]
+
+[tool.ruff.lint.flake8-annotations]
+allow-star-arg-any = true
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "double"
+docstring-quotes = "double"
+
+[tool.ruff.lint.per-file-ignores]
+"*.ipynb" = ["E402"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.pyflakes]
+allowed-unused-imports = ["hvplot.pandas"]

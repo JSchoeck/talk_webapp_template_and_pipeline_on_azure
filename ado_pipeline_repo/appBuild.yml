@@ -1,0 +1,184 @@
+# This pipeline is used to build the web app and function app
+stages:
+- stage: Build
+  displayName: Build stage
+  jobs:
+  - job: BuildJob
+    pool:
+      vmImage: $(vmImageName)
+
+    steps:
+
+    - checkout: self
+      fetchDepth: 0  # enables fetching blame information for Sonar Cloud analysis
+      fetchTags: false
+
+    - script: |
+        pip install --upgrade pip
+      displayName: 'Update pip'
+
+
+    - script: |
+        echo "Pipeline Workspace: $(Pipeline.Workspace)"
+        # Dynamically find the pyproject.toml file
+        pyproject_path=$(find "$(Pipeline.Workspace)/s" -name "pyproject.toml" -type f | head -n 1)
+        echo "Found pyproject.toml at: $pyproject_path"
+
+        # Extract the directory containing pyproject.toml
+        pyproject_root=$(dirname "$pyproject_path")
+        echo "Project root directory: $pyproject_root"
+
+        # Export the project root as an environment variable for subsequent steps
+        echo "##vso[task.setvariable variable=pyprojectRoot]$pyproject_root"
+
+        # Export the path as an environment variable for subsequent steps
+        echo "##vso[task.setvariable variable=pyprojectPath]$pyproject_path"
+      displayName: 'Locate pyproject.toml'
+
+
+    # Start a python session to extract parameters from pyproject.toml
+    # NOTE: environment variables are lost between blocks, unless set with 'task.setvariable'
+    # NOTE: environment variables can only be used in the step after they were set
+    # NOTE: ensure that the folder "./deploy" is part of your project (see template app)
+    - checkout: Shared_Templates
+    - script: |
+        echo "Importing module from template repo..."
+        echo "Using pyproject.toml from: $(pyprojectPath)"
+        export PYTHONPATH="$(Pipeline.Workspace)/s/TEC_007_Shared_Templates/WebApp_Bicep_Deployment:${PYTHONPATH}"
+    
+        echo "Pipeline Workspace: $(Pipeline.Workspace)"
+        ls "$(Pipeline.Workspace)/s/TEC_007_Shared_Templates/WebApp_Bicep_Deployment/deploy"
+        export PYTHONPATH="$(Pipeline.Workspace)/s/TEC_007_Shared_Templates/WebApp_Bicep_Deployment:${PYTHONPATH}"
+
+        ls "$(Pipeline.Workspace)/s"
+        python -c "from pathlib import Path; print(Path.cwd())"
+        python -m pip install toml
+        python -c "from deploy import nkd_pipeline_utils; nkd_pipeline_utils.get_all_var_from_pyproject(path='$(pyprojectPath)')"
+       
+      failOnStderr: true
+      displayName: 'Set versions and vars from pyproject.toml and save deployment date to file'
+      name: setVars
+
+    - bash: |
+        echo "Cleaning up Shared_Templates repository files..."
+        rm -rf "$(Pipeline.Workspace)/s/TEC_007_Shared_Templates"
+
+        echo "Identifying dynamic directory..."
+        dynamic_dir=$(find "$(Pipeline.Workspace)/s" -mindepth 1 -maxdepth 1 -type d)
+        echo "Dynamic directory found: $dynamic_dir"
+
+        echo "Moving files from dynamic directory to root level..."
+        shopt -s dotglob  # Include hidden files
+        mv "$dynamic_dir/"* "$(Pipeline.Workspace)/s/"
+
+        echo "Cleaning up empty dynamic directory..."
+        rmdir "$dynamic_dir"
+
+        echo "File structure cleaned up. Current root contents:"
+        ls -la "$(Pipeline.Workspace)/s/"
+      displayName: "Clean up Shared_Templates and restructure files"
+
+
+    - template: sonarcloud.yml@Shared_Templates
+      parameters:
+        sonarCloudQG: $(setVars.sonarCloudQG)
+      
+
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '$(setVars.pythonVersion)'
+      displayName: 'Use Python'
+      # Python is installed at i.e. /opt/hostedtoolcache/Python/3.11.9/x64/bin/python3.11
+      # Virtual environment is at /home/vsts/.local/ ?
+
+    # NOTE: PipAuthenticate stores the URL including authorization token in PIP_EXTRA_INDEX_URL
+    # Use $(PIP_EXTRA_INDEX_URL) to authenticate with the private feed
+    - task: PipAuthenticate@1
+      inputs:
+        artifactFeeds: 'nkd_utils_lib'
+        onlyAddExtraIndex: true
+      displayName: 'Authenticate to nkd_utils_library feed'
+
+    # poetry uses base python at /opt/hostedtoolcache/Python/3.11.9/x64/bin/python3.11
+    # poetry itself is installed at /home/vsts/.local/bin/poetry
+    # which pip --> /opt/hostedtoolcache/Python/3.11.9/x64/bin/pip 
+    # NOTE: authentication is necessary to be set for poetry, otherwise it will not be able to install packages from the private feed or perform the lock
+    # NOTE: starting with poetry 2.0, this could be better: poetry self add poetry-plugin-export
+    - bash: |
+        curl -sSL https://install.python-poetry.org | python -
+        poetry env info
+        pip install poetry-plugin-export
+        poetry config warnings.export false
+        AUTH_URL=$PIP_EXTRA_INDEX_URL
+        AUTH_URL="${AUTH_URL#*//}"
+        AUTH_URL="${AUTH_URL%@*}"
+        ADO_USER="${AUTH_URL%:*}"
+        ADO_PWD="${AUTH_URL#*:}"
+        poetry config http-basic.nkd-utils-lib $ADO_USER $ADO_PWD
+        poetry config repositories.nkd-utils-lib https://nkdit.pkgs.visualstudio.com/_packaging/nkd_utils_lib/pypi/simple/nkd-utils-lib/
+      failOnStderr: false
+      displayName: 'Install poetry'
+
+    # Update the lock file to get the latest dependencies, then export them to requirements.txt
+    # NOTE: only specifically listed dependency groups will be included, besides the main group (i.e. local, dev)
+    # NOTE: poetry.lock MUST be up to date with pyproject.toml, since "poetry lock" cannot use the pip authentication to update the lock file
+    - bash: |
+        poetry self show plugins
+        lockOutput=$(poetry lock 2>&1)
+        echo "$lockOutput"
+        if echo "$lockOutput" | grep -q "version solving failed"; then
+          echo "Version solving failed. Stopping the pipeline."
+          exit 1
+        fi
+        exportOutput=$(poetry export -f requirements.txt --output requirements.txt 2>&1)
+        echo "$exportOutput"
+        echo "Current working directory: $(pwd)"
+        if echo "$exportOutput" | grep -q "Warning: poetry.lock is not consistent with pyproject.toml"; then
+          echo "poetry.lock is not consistent with pyproject.toml. Stopping the pipeline."
+          exit 1
+        fi
+      # failOnStderr: true
+      displayName: 'Update lock file and export dependencies'
+
+    # NOTE: this is only for debugging purposes, to find the location of requirements.txt
+    - bash: |
+        echo "Searching for requirements.txt..."
+        find $(Pipeline.Workspace) -name "requirements.txt"
+      displayName: "Debug requirements.txt location"
+
+    # Create a new virtual environment and install dependencies
+    # NOTE: must be in a single script block to keep the virtual environment active
+    # NOTE: environment name must be "antenv" for the Azure Web App to find it
+    - script: |
+        python -m venv antenv
+        source antenv/bin/activate
+        pip install -r requirements.txt
+      workingDirectory: $(projectRoot)
+      displayName: "Install requirements incl. nkd_utils_lib for WebApp"
+      condition: eq(variables['appType'], 'webApp')
+
+    # NOTE: creating a virtual environment is not necessary for function apps
+    - script: |
+        pip install --target="./.python_packages/lib/site-packages" -r ./requirements.txt
+      workingDirectory: $(projectRoot)
+      displayName: 'Install dependencies for FunctionApp'
+      condition: eq(variables['appType'], 'functionApp')
+
+    # Delete all files that are not needed for the web app to run on the deployment server
+    - task: DeleteFiles@1
+      inputs:
+        contents: $(filesToDelete)
+      displayName: 'Remove unneeded files'
+
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: '$(projectRoot)'
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+        replaceExistingArchive: true
+      displayName: 'Create artifact'
+
+    - upload: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+      displayName: 'Upload artifact'
+      artifact: drop

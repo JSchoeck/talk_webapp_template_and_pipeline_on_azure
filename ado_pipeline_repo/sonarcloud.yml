@@ -1,0 +1,41 @@
+parameters:
+  - name: sonarCloudQG
+    type: string
+
+steps:
+# Example, adapt to Sonar Cloud use instead of branch check
+    # - task: pr-auto-comment@1displayName: 'Wrong pipeline configuration'
+      # condition: in(variables['System.PullRequest.TargetBranch'], 'refs/heads/master', 'refs/heads/main')
+      # inputs:
+      #   accessToken: '$(System.AccessToken)'
+      #   comments: |
+      #     Wrong pipeline configuration. Please do not use the prod pipeline for pull requests.
+
+    # Sonar Cloud analysis
+    # NOTE: the project must be set up on the Sonar Cloud website before the pipeline can trigger an analysis
+    # https://sonarcloud.io/projects
+
+- ${{ if eq(parameters.sonarCloudQG, 'true' ) }}:
+  - task: SonarCloudPrepare@3
+    inputs:
+      SonarCloud: $(sonarcloud-instance)
+      organization: $(sonarcloud-organization)
+      scannerMode: 'cli'
+      configMode: 'manual'
+      cliProjectKey: $(Build.Repository.Name)
+      extraProperties: |  # NOTE: do NOT add whitespace around the = sign, otherwise the task breaks!
+        sonar.projectKey=$(sonarcloud-organization)_$(Build.Repository.Name)
+        sonar.projectName=$(Build.Repository.Name)
+        sonar.sources=$(projectRoot)
+        sonar.python.version=$(pythonVersion)
+        sonar.sourceEncoding=UTF-8
+        sonar.exclusions=**/docs/**, **/*.json, **/*.ipynb
+      # NOTE: adjust excluded file types, if necessary
+
+  - task: SonarCloudAnalyze@3
+    inputs:
+      jdkversion: 'JAVA_HOME_17_X64'
+
+  - task: SonarCloudPublish@3
+    inputs:
+      pollingTimeoutSec: $(sonarcloud-timeout)

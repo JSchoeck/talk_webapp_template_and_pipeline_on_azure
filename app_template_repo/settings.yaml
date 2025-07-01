@@ -1,0 +1,12 @@
+app_settings:
+  debug_mode: true
+  update_local_files: false
+  
+api_keys:
+  google_maps: "YOUR_GOOGLE_MAPS_API_KEY"
+  
+feature_toggles:
+  enable_advanced_search: true
+
+model_settings:
+  flat_scaling_factor: 1

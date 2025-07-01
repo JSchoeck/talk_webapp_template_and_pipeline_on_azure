@@ -1,0 +1,25 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+        "label": "poetry install",
+        "type": "shell",
+        // Install dependencies from lock file into environment, without installing the root package itself
+        "command": "poetry install --no-root",
+        "dependsOn": "poetry lock refresh"
+    },
+    {
+        "label": "poetry lock refresh",
+        "type": "shell",
+        // Refresh lock file with dependencies from pyproject.toml
+        "command": "poetry lock"
+    },
+    {
+        "label": "prepare environment",
+        "dependsOrder": "sequence",
+        "dependsOn": [
+            "poetry install"
+        ]
+    }
+  ]
+}

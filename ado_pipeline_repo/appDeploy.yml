@@ -1,0 +1,42 @@
+parameters:
+  - name: armconnection
+    type: string
+  - name: appName
+    type: string
+  - name: appType
+    type: string
+  - name: projectId
+    type: string
+  - name: projectName
+    type: string
+
+stages:
+- stage: DeployApp
+  displayName: 'Deploy to azure environment'
+  dependsOn: 
+    - Build
+    - DeployBicep
+  variables:
+    armconnection: ${{ parameters.armconnection }}
+    appName: ${{ parameters.appName }}
+    appType: ${{ parameters.appType }}
+    isMain: ${{ variables.isMain }}
+    projectId: ${{ parameters.projectId }}
+    projectName: ${{ parameters.projectName }}
+  jobs:
+    - deployment: DeploymentJob
+      pool:
+        vmImage: $(vmImageName)
+      environment:
+        name: 'development'
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+            - task: AzureWebApp@1
+              displayName: 'Deploy Azure Web App'
+              inputs:
+                azureSubscription: ${{ variables.armconnection }}      
+                appName: ${{ parameters.appName }}
+                appType: 'webAppLinux' # $(appType) it should be always webAppLinux
+                package: $(Pipeline.Workspace)/drop/$(Build.BuildId).zip

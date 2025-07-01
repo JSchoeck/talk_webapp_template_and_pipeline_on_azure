@@ -1,0 +1,15 @@
+[theme]
+base="light"
+primaryColor="#F63366"
+backgroundColor="#FFFFFF"
+secondaryBackgroundColor="#FADEDE"  # production: F0F2F6; development: FADEDE; currently set in utils lib ui_elements
+textColor="#262730"
+font="sans-serif"
+
+[client]
+toolbarMode="minimal"  # https://docs.streamlit.io/develop/concepts/architecture/app-chrome#customize-the-menu
+showSidebarNavigation = false  # Controls whether the default sidebar page navigation in a multi-page app is displayed.
+# Alternatively build custom navigation: https://docs.streamlit.io/develop/tutorials/multipage/st.page_link-nav
+
+[browser]
+gatherUsageStats = false  # always set to false, otherwise user data will be sent to api.segment.io
